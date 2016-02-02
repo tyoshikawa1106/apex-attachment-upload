@@ -1,0 +1,55 @@
+<apex:page controller="AttachmentUploaderController" showHeader="true" sidebar="false" id="page">
+    <head>
+        <!-- AngularJS -->
+        <apex:includeScript value="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.4.9/angular.min.js" />
+        <apex:includeScript value="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.4.9/angular-route.js" />
+        <apex:includeScript value="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.4.9/angular-messages.js" />
+        <!-- Lightning Design System -->
+        <apex:stylesheet value="{!URLFOR($Resource.SLDS0121, 'assets/styles/salesforce-lightning-design-system-vf.css')}" />
+        <!-- SweetAlert -->
+        <apex:includeScript value="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.min.js" />
+        <apex:stylesheet value="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.min.css" />
+    </head>
+    <body>
+        <div ng-app="myApp">
+            <div ng-controller="mainCtrl">
+                <div class="slds">
+                    <div class="slds-m-vertical--small slds-text-heading--label">
+                        <h1>Javascript Remoting &amp; Attachment Upload</h1>
+                    </div>
+                    <form name="inputForm" novalidate="true" class="slds-m-horizontal--small">
+                        <!-- メッセージ -->
+                        <div class="slds-box slds-theme--info slds-m-bottom--small" ng-show="!!errorMessages.length">
+                            <p><span ng-bind="errorMessages"></span></p>
+                        </div>
+                        <!-- 取引先名 -->
+                        <div class="slds-form-element slds-is-required" ng-class="{'slds-has-error': inputForm.accName.$invalid && inputForm.accName.$dirty}">
+                            <label class="slds-form-element__label" for="accName">{!$ObjectType.Account.Fields.Name.Label}</label>
+                            <div class="slds-form-element__control">
+                                <input name="accName" ng-model="account.Name" class="slds-input" type="text" required="true" ng-maxlength="255"  />
+                                <div ng-messages="inputForm.accName.$error" ng-if="inputForm.accName.$dirty">
+                                    <div ng-message="required" class="slds-form-element__help">値を入力してください</div>
+                                    <div ng-message="maxlength" class="slds-form-element__help">文字数が上限を超えました</div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 添付ファイル -->
+                        <div class="slds-box slds-theme--shade slds-m-top--small">
+                            <div class="slds-form-element slds-is-required">
+                                <label class="slds-form-element__label" for="attamentFile">添付ファイル</label>
+                                <div class="slds-form-element__control">
+                                    <input type="file" name="attamentFile[]" id="attamentFile" multiple="multiple" />
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 保存ボタン -->
+                        <div class="slds-m-top--medium">
+                            <button class="slds-button slds-button--brand" ng-click="doSave($event)" ng-disabled="inputForm.$invalid || isLocked">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <apex:include pageName="AttachmentUploaderScript" />
+    </body>
+</apex:page>
