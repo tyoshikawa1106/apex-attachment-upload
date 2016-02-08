@@ -3,9 +3,10 @@
         (function(){
             beenFocused = true;
 
-            var maxStringSize = 6000000;    //Maximum String size is 6,000,000 characters
-            var maxFileSize = 4350000;      //After Base64 Encoding, this is the max file size
-            var chunkSize = 950000;         //Maximum Javascript Remoting message size is 1,000,000 characters
+            ////var maxStringSize = 6000000;  // Maximum String size is 6,000,000 characters
+            var MAX_FILE_SIZE = 1000000;      // After Base64 Encoding, this is the max file size [Check! 1MB!]
+            var MAX_FILE_CNT = 2;             // Upload File Count
+            var CHUNK_SIZE = 950000;          // Maximum Javascript Remoting message size is 1,000,000 characters
 
             var app = angular.module('myApp', ['ngMessages']);
 
@@ -21,6 +22,7 @@
                 $scope.isLocked = false;
                 $scope.errorMessages = [];
                 
+                // 保存ボタン処理
                 $scope.doSave = function(event) {
                     event.preventDefault();
                     // 処理開始前にメッセージをクリア
@@ -30,11 +32,18 @@
                     // ファイル情報の取得
                     var uploadFile = document.getElementById('attamentFile');
                     // 添付ファイル件数の判定
-                    var isErrorFileCount = checkUploadFileCount(uploadFile.files.length);
+                    var isErrorFileCount = checkAttachmentFileCnt(uploadFile.files.length, MAX_FILE_CNT);
                     if (isErrorFileCount) {
                         $scope.isLocked = false;
                         return false;
                     }
+                    // ファイルサイズの判定
+                    var isErrorFileSize = checkAttachmentFileSize(uploadFile, MAX_FILE_SIZE);
+                    if (isErrorFileSize) {
+                        $scope.isLocked = false;
+                        return false;
+                    }
+
                     // 取引先の登録処理を実行
                     doSaveAccountByApex($scope.account, uploadFile);
                 };
@@ -42,15 +51,32 @@
                 /**
                  * ファイル件数の判定
                  */
-                function checkUploadFileCount(uploadFileCnt) {
+                function checkAttachmentFileCnt(attamentFileCnt, maxFileCnt) {
                     var isError = false;
-                    if (!!uploadFileCnt == 0) {
+                    if (!!attamentFileCnt == 0) {
                         $scope.errorMessages = 'ファイルを選択してください。';
                         isError = true;
-                    } else if (uploadFileCnt > 5) {
-                        $scope.errorMessages = '添付できるファイルは5つまでです。';
+                    } else if (attamentFileCnt > maxFileCnt) {
+                        $scope.errorMessages = '添付できるファイルは' + maxFileCnt + 'つまでです。';
                         isError = true;
                     }
+                    return isError;
+                }
+
+                /**
+                 * ファイルサイズの判定
+                 */
+                function checkAttachmentFileSize(uploadFile, maxFileSize) {
+                    var isError = false;
+                    for (var i=0; i < uploadFile.files.length; i++) {
+                        (function(file) {
+                            if (file.size > maxFileSize) {
+                                $scope.errorMessages = 'ファイルサイズは1MBまでです';
+                                isError = true;
+                            }
+                        })(uploadFile.files[i]);
+                    }
+
                     return isError;
                 }
 
@@ -66,7 +92,7 @@
                                 $scope.errorMessages = result.errorMessages;
                             } else {
                                 // 添付ファイル登録処理の呼び出し
-                                doUploadAttachment(result.recordId, uploadFile);
+                                doFilesRead(result.recordId, uploadFile);
                             }
                         } else {
                             alert(event.message);
@@ -77,60 +103,30 @@
                 }
 
                 /**
-                 * 添付ファイルの登録
+                 * ファイルの読み込み
                  */
-                function doUploadAttachment(accountId, uploadFile) {
-                    var attachments = [];
-                    // 非同期処理の準備
-                    var promises = [];
-                    for (var i = 0; i < uploadFile.files.length; i++) {
-                        promises.push(createAttachment(accountId, uploadFile.files[i]));
-                    }
-                    // 非同期処理の実行
-                    $q.all(promises).then(
-                        function() {
-                            // 完了メッセージの表示
-                            doSuccess();
-                            // 操作ロック解除
-                            $scope.isLocked = false;
+                function doFilesRead(accountId, uploadFile) {
+                    console.log('-- doFilesRead START --');
+                    console.log('accountId = ' + accountId);
+                    console.log('uploadFile size = ' + uploadFile.files.length);
+                    // [Promise]ファイルの読み込み
+                    var promiseFileRead = fileRead(accountId, uploadFile);
+                    var promiseFileReadResult = promiseFileRead.then(function(result) {
+                        console.log('-- promiseFileRead --');
+                        return result;
+                    });
+                    var promiseAttachment = promiseFileReadResult.then(function(uploadFile) {
+                        console.log('-- promiseFileReadResult --');
+                        // 添付ファイル件数ループ
+                        for (var i = 0; i < uploadFile.length; i++) {
+                            var fileName = uploadFile[i].name;
+                            var attachment = uploadFile[i].attachment;
+                            // 添付ファイルの登録処理
+                            var promiseUploader = doSaveAttachmentByApex(accountId, null, fileName, attachment, 0);
                         }
-                    )
-                }
+                    });
 
-                /**
-                 * 添付ファイルの登録
-                 */
-                function createAttachment(accountId, file) {
-                    var deferred = $q.defer();
-
-                    var fileReader = new FileReader();
-                    fileReader.onloadend = function(e) {
-                        var attachment = window.btoa(this.result);  //Base 64 encode the file before sending it
-                        var positionIndex = 0;
-                        fileSize = attachment.length;
-                        console.log("Total Attachment Length: " + fileSize);
-
-                        if(fileSize < maxStringSize) {
-                            // Apex処理実行
-                            doSaveAttachmentByApex(accountId, null, file.name, attachment, positionIndex);
-                            // 処理終了
-                            deferred.resolve();
-                        } else {
-                            alert("Base 64 Encoded file is too large.  Maximum size is " + maxStringSize + " your file is " + fileSize + ".");
-                            deferred.reject();
-                        }             
-                    }
-                    fileReader.onerror = function(e) {
-                        alert("There was an error reading the file.  Please try again.");
-                        deferred.reject();
-                    }
-                    fileReader.onabort = function(e) {
-                        alert("There was an error reading the file.  Please try again.");
-                        deferred.reject();
-                    }         
-                    fileReader.readAsBinaryString(file);  //Read the body of the file
-
-                    return deferred.promise; 
+                    console.log('-- doFilesRead END --');
                 }
 
                 /**
@@ -138,23 +134,17 @@
                  * 一度の通信量に上限があるため複数回に分けて実行
                  */
                 function doSaveAttachmentByApex(accountId, attachmentId, attachmentName, attachment, positionIndex) {
-                    // パラメータチェック
-                    console.log('-- 添付ファイル登録処理開始 --');
-                    console.log('accountId = ' + accountId);
-                    console.log('attachmentId = ' + attachmentId);
-                    console.log('attachmentName = ' + attachmentName);
-                    console.log('positionIndex = ' + positionIndex);
-
                     // ファイルのBody情報取得
                     var doneUploading = false;
+                    var fileSize = attachment.length;
+
                     var attachmentBody = "";
-                    if(fileSize <= positionIndex + chunkSize) {
+                    if(fileSize <= positionIndex + CHUNK_SIZE) {
                         attachmentBody = attachment.substring(positionIndex);
                         doneUploading = true;
                     } else {
-                        attachmentBody = attachment.substring(positionIndex, positionIndex + chunkSize);
+                        attachmentBody = attachment.substring(positionIndex, positionIndex + CHUNK_SIZE);
                     }
-                    console.log('doneUploading = ' + doneUploading);
 
                     // RemoteAction
                     AttachmentUploaderController.doSaveAttachment(accountId, attachmentId, attachmentName, attachmentBody,
@@ -164,10 +154,10 @@
                                     $scope.errorMessages = result.errorMessages;
                                 } else {
                                     if(doneUploading == true) {
-                                        console.log('OK!! = ' + result.recordId);
+                                        console.log('Attachment Upload = ' + result.recordId);
                                     } else {
                                         // 添付ファイル登録処理の再呼び出し(Bodyの続きをアップロード)
-                                        doSaveAttachmentByApex(accountId, result.recordId, attachmentName, attachment, positionIndex + chunkSize);
+                                        doSaveAttachmentByApex(accountId, result.recordId, attachmentName, attachment, positionIndex + CHUNK_SIZE);
                                     }
                                 }
                             } else {
@@ -180,14 +170,40 @@
                 }
 
                 /**
-                 * 完了メッセージの表示
+                 * ファイルの読み込み
                  */
-                function doSuccess() {
-                    $scope.isLocked = false;
-                    swal('SUCCESS', '取引先と添付ファイルの登録を行っています。', 'success');
-                    console.log('success');
+                function fileRead(accountId, uploadFile) {
+                    console.log('-- fileRead START --');
+                    var deferred = $q.defer();
+
+                    var readFiles = [];
+                    for (var i = 0; i < uploadFile.files.length; i++) {
+                        (function(file) {
+                            var fileReader = new FileReader();
+                            fileReader.onloadend = function(e) {
+                                var attachment = window.btoa(this.result);
+                                var fileInfo = {
+                                    name : file.name,
+                                    size : file.size,
+                                    attachment : attachment
+                                };
+                                readFiles.push(fileInfo);
+
+                                // ファイル全件読み込んだら処理終了
+                                if (i == uploadFile.files.length) {
+                                    console.log('Complate File Read! = ' + uploadFile.files.length);
+                                    deferred.resolve(readFiles);
+                                }
+                            }
+
+                            // ファイルリード実行
+                            fileReader.readAsBinaryString(file);
+                        })(uploadFile.files[i]);
+                    }
+                    
+                    return deferred.promise; 
                 }
-            }]);
+            }]);    
         })();
     </script>
 </apex:page>
