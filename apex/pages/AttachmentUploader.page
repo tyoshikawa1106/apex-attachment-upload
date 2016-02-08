@@ -14,22 +14,22 @@
         <div ng-app="myApp">
             <div ng-controller="mainCtrl">
                 <div class="slds">
+                    <!-- メッセージ -->
+                    <div class="slds-box slds-theme--info slds-m-bottom--small" ng-show="!!errorMessages.length">
+                        <p><span ng-bind="errorMessages"></span></p>
+                    </div>
                     <div class="slds-m-vertical--small slds-text-heading--label">
                         <h1>Javascript Remoting &amp; Attachment Upload</h1>
                     </div>
                     <form name="inputForm" novalidate="true" class="slds-m-horizontal--small">
-                        <!-- メッセージ -->
-                        <div class="slds-box slds-theme--info slds-m-bottom--small" ng-show="!!errorMessages.length">
-                            <p><span ng-bind="errorMessages"></span></p>
-                        </div>
                         <!-- 取引先名 -->
                         <div class="slds-form-element slds-is-required" ng-class="{'slds-has-error': inputForm.accName.$invalid && inputForm.accName.$dirty}">
                             <label class="slds-form-element__label" for="accName">{!$ObjectType.Account.Fields.Name.Label}</label>
                             <div class="slds-form-element__control">
-                                <input name="accName" ng-model="account.Name" class="slds-input" type="text" required="true" ng-maxlength="255"  />
+                                <input name="accName" ng-model="account.Name" class="slds-input" type="text" required="true" ng-maxlength="{!$ObjectType.Account.Fields.Name.Length}" />
                                 <div ng-messages="inputForm.accName.$error" ng-if="inputForm.accName.$dirty">
                                     <div ng-message="required" class="slds-form-element__help">値を入力してください</div>
-                                    <div ng-message="maxlength" class="slds-form-element__help">文字数が上限を超えました</div>
+                                    <div ng-message="maxlength" class="slds-form-element__help">文字数が上限を超えました [Max Length = {!$ObjectType.Account.Fields.Name.Length}]</div>
                                 </div>
                             </div>
                         </div>
