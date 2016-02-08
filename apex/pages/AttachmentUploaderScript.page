@@ -1,15 +1,17 @@
 <apex:page >
     <script type="text/javascript">
         (function(){
+            // 初期フォーカスクリア
             beenFocused = true;
+            // ファイル読込番号
+            var data_index;
+            // アップロード定数
+            var MAX_FILE_SIZE = 2000000;
+            var MAX_FILE_CNT = 5;
+            var CHUNK_SIZE = 180000;
 
-            ////var maxStringSize = 6000000;  // Maximum String size is 6,000,000 characters
-            var MAX_FILE_SIZE = 1000000;      // After Base64 Encoding, this is the max file size [Check! 1MB!]
-            var MAX_FILE_CNT = 2;             // Upload File Count
-            var CHUNK_SIZE = 950000;          // Maximum Javascript Remoting message size is 1,000,000 characters
-
+            // Angular.module
             var app = angular.module('myApp', ['ngMessages']);
-
             // 共通変数(Account)
             app.factory('Account', function() {
                 return {
@@ -17,22 +19,33 @@
                 };
             });
 
+            // MainCtrl
             app.controller('mainCtrl', ["$scope", "$q" , 'Account', function($scope, $q, Account) {
+                // 取引先情報取得
                 $scope.account = Account;
+                // 画面ロック初期化
                 $scope.isLocked = false;
+                // エラーメッセージ初期化
                 $scope.errorMessages = [];
+                // エラーメッセージ初期化
+                $scope.messages = [];
+                // データインデックスの初期化
+                data_index = 0;
                 
                 // 保存ボタン処理
                 $scope.doSave = function(event) {
                     event.preventDefault();
                     // 処理開始前にメッセージをクリア
                     $scope.errorMessages = [];
+                    $scope.messages = [];
+                    // データインデックスの初期化
+                    data_index = 0;
                     // 画面操作ロック
                     $scope.isLocked = true;
                     // ファイル情報の取得
-                    var uploadFile = document.getElementById('attamentFile');
+                    var uploadFile = document.getElementById('attamentFile').files;
                     // 添付ファイル件数の判定
-                    var isErrorFileCount = checkAttachmentFileCnt(uploadFile.files.length, MAX_FILE_CNT);
+                    var isErrorFileCount = checkAttachmentFileCnt(uploadFile.length, MAX_FILE_CNT);
                     if (isErrorFileCount) {
                         $scope.isLocked = false;
                         return false;
@@ -43,7 +56,6 @@
                         $scope.isLocked = false;
                         return false;
                     }
-
                     // 取引先の登録処理を実行
                     doSaveAccountByApex($scope.account, uploadFile);
                 };
@@ -68,13 +80,13 @@
                  */
                 function checkAttachmentFileSize(uploadFile, maxFileSize) {
                     var isError = false;
-                    for (var i=0; i < uploadFile.files.length; i++) {
+                    for (var i=0; i < uploadFile.length; i++) {
                         (function(file) {
                             if (file.size > maxFileSize) {
                                 $scope.errorMessages = 'ファイルサイズは1MBまでです';
                                 isError = true;
                             }
-                        })(uploadFile.files[i]);
+                        })(uploadFile[i]);
                     }
 
                     return isError;
@@ -92,7 +104,8 @@
                                 $scope.errorMessages = result.errorMessages;
                             } else {
                                 // 添付ファイル登録処理の呼び出し
-                                doFilesRead(result.recordId, uploadFile);
+                                prepareFileUploads(result.recordId, uploadFile);
+                                return false;
                             }
                         } else {
                             alert(event.message);
@@ -105,111 +118,119 @@
                 /**
                  * ファイルの読み込み
                  */
-                function doFilesRead(accountId, uploadFile) {
-                    console.log('-- doFilesRead START --');
-                    // [Promise]ファイルの読み込み
-                    var promiseFileRead = fileRead(accountId, uploadFile);
-                    promiseFileRead.then(function(result) {
-                        // ファイルリードの結果をつかってRemoteActionで登録処理を実行
-                        var subPromises = [];
-                        for (var i = 0; i < result.length; i++) {
-                            var fileName = result[i].name;
-                            var attachment = result[i].attachment;
-                            subPromises.push(doSaveAttachmentByApex(accountId, null, fileName, attachment, 0));
+                function prepareFileUploads(accountId, uploadFile) {
+                    console.log('accountId = ' + accountId);
+                    console.log('uploadFile size = ' + uploadFile.length);
+                    // アップロード処理チェック
+                    checkForUploads(accountId, uploadFile);
+                }
+
+                /**
+                 * アップロード処理チェック
+                 */
+                function checkForUploads(accountId, uploadFile) {
+                    console.log('-- checkForUploads --');
+                    // データインデックス
+                    data_index++;
+                    // ファイル登録処理実行
+                    console.log('ファイル件数 = ' + uploadFile.length + ' : ' + (data_index - 1) + '番目のファイル処理');
+                    if(uploadFile.length >= data_index) {
+                        var currentFile = uploadFile[data_index - 1];
+                        
+                        var byteChunkArray = new Array();  
+
+                        //First check to see if file size is less than the chunk size, if so first and only chunk is entire size of file
+                        if(currentFile.size <= CHUNK_SIZE){
+                            byteChunkArray[0] = '0-' + (currentFile.size - 1);
+                        }else{
+                            //Determine how many whole byte chunks make up the file,
+                            var numOfFullChunks = Math.floor(currentFile.size / CHUNK_SIZE); //i.e. 1.2MB file would be 1000000 / CHUNK_SIZE
+                            var remainderBytes = currentFile.size % CHUNK_SIZE; // would determine remainder of 1200000 bytes that is not a full chunk
+                            var startByte = 0;
+                            var endByte = CHUNK_SIZE - 1;
+                            
+                            //Loop through the number of full chunks and build the byteChunkArray array
+                            for(i = 0; i < numOfFullChunks; i++){
+                                byteChunkArray[i] = startByte+'-'+endByte;
+                                console.log(byteChunkArray[i]);
+                                
+                                //Set new start and stop bytes for next iteration of loop
+                                startByte = endByte + 1;
+                                endByte += CHUNK_SIZE;
+                            }
+                            
+                            //Add the last chunk of remaining bytes to the byteChunkArray
+                            startByte = currentFile.size - remainderBytes;
+                            endByte = currentFile.size;
+                            byteChunkArray.push(startByte+'-'+endByte);
                         }
-                        // PromiseAll処理
-                        var subPromiseAll = $q.all(subPromises);
-                        subPromiseAll.then(function() {
-                            // 検証用メッセージ
-                            console.log('-- Upload!!! --');
-                            $scope.errorMessages = '登録成功！'
-                        });
-                    });
-                }
-
-                /**
-                 * ファイルの読み込み
-                 */
-                function fileRead(accountId, uploadFile) {
-                    console.log('-- fileRead START --');
-                    var deferred = $q.defer();
-
-                    var readFiles = [];
-                    for (var i = 0; i < uploadFile.files.length; i++) {
-                        (function(file) {
-                            var fileReader = new FileReader();
-                            fileReader.onloadend = function(e) {
-                                var attachment = window.btoa(this.result);
-                                var fileInfo = {
-                                    name : file.name,
-                                    size : file.size,
-                                    attachment : attachment
-                                };
-                                readFiles.push(fileInfo);
-
-                                // ファイル全件読み込んだら処理終了
-                                if (i == uploadFile.files.length) {
-                                    console.log('Complate File Read! = ' + uploadFile.files.length);
-                                    deferred.resolve(readFiles);
-                                }
-                            }
-
-                            // ファイルリード実行
-                            fileReader.readAsBinaryString(file);
-                        })(uploadFile.files[i]);
-                    }
-                    
-                    return deferred.promise; 
-                }
-
-                /**
-                 * 添付ファイルの登録処理(Apex)
-                 * 一度の通信量に上限があるため複数回に分けて実行
-                 */
-                function doSaveAttachmentByApex(accountId, attachmentId, attachmentName, attachment, positionIndex) {
-                    var deferred = $q.defer();
-
-                    // ファイルのBody情報取得
-                    var doneUploading = false;
-                    var fileSize = attachment.length;
-
-                    var attachmentBody = "";
-                    if(fileSize <= positionIndex + CHUNK_SIZE) {
-                        attachmentBody = attachment.substring(positionIndex);
-                        doneUploading = true;
+                        
+                        //Start processing the byteChunkArray for the current file, parameter is '' because this is the first chunk being uploaded and there is no attachment Id
+                        processByteChunkArray(accountId, byteChunkArray, currentFile, '', uploadFile);
                     } else {
-                        attachmentBody = attachment.substring(positionIndex, positionIndex + CHUNK_SIZE);
+                        console.log('File Upload Done!!');
+                        // 処理完了メッセージを表示
+                        $scope.messages = '取引先の登録と添付ファイルのアップロードが正常に実行されました。 : Account ID = ' + accountId;
+                        $scope.isLocked = false;
+                        // Viewに反映
+                        $scope.$apply();
                     }
+                }
 
-                    // RemoteAction
-                    AttachmentUploaderController.doSaveAttachment(accountId, attachmentId, attachmentName, attachmentBody,
-                        function(result, event){
-                            if(event.status) {
-                                if (result.errorMessages.length > 0) {
-                                    $scope.errorMessages = result.errorMessages;
-                                } else {
-                                    if(doneUploading == true) {
-                                        console.log('Attachment Upload = ' + result.recordId);
-                                        deferred.resolve();
-                                        return false;
-                                    } else {
-                                        // 添付ファイル登録処理の再呼び出し(Bodyの続きをアップロード)
-                                        doSaveAttachmentByApex(accountId, result.recordId, attachmentName, attachment, positionIndex + CHUNK_SIZE);
-                                        return false;
+                function processByteChunkArray(accountId, byteChunkArray, currentFile, attachmentId, uploadFile){
+                    console.log('-- processByteChunkArray --');
+                    //Proceed if there are still values in the byteChunkArray, if none, all piece of the file have been uploaded
+                    if(byteChunkArray.length > 0){
+                        //Determine the byte range that needs to uploaded, if byteChunkArray is like... ['0-179999','180000-359999']
+                        var indexes = byteChunkArray[0].split('-'); //... get the first index range '0-179999' -> ['0','179999']
+                        var startByte = parseInt(indexes[0]); //0
+                        var stopByte = parseInt(indexes[1]); //179999
+                        
+                        //Slice the part of the file we want to upload, currentFile variable is set in checkForUploads() method that is called before this method
+                        var blobChunk = currentFile.slice(startByte , stopByte + 1);
+                        
+                        //Create a new reader object, part of HTML5 File API
+                        var reader = new FileReader();
+                        
+                        //Read the blobChunk as a binary string, reader.onloadend function below is automatically called after this line
+                        reader.readAsBinaryString(blobChunk);
+                        
+                        //Create a reader.onload function, this will execute immediately after reader.readAsBinaryString() function above;
+                        reader.onloadend = function(evt){ 
+                            if (evt.target.readyState == FileReader.DONE) {
+                                // ファイルの内容
+                                var base64value = window.btoa(evt.target.result);
+
+                                // ファイル名とファイル種別
+                                console.log('ファイル名 = ' + currentFile.name);
+                                console.log('ファイル種別 = ' + currentFile.type);
+
+                                // Apex RemoteActionで添付ファイルの登録
+                                AttachmentUploaderController.doSaveAttachment(accountId, attachmentId, currentFile.name, currentFile.type ,base64value,
+                                    function(result,event){
+                                        console.log('event.status = ' + event.status);
+                                        if (event.status) {
+                                            // index情報削除
+                                            byteChunkArray.shift();
+                                            //添付ファイルIDを取得
+                                            attachmentId = result.recordId;
+                                            // 添付ファイルの続きをアップロード
+                                            processByteChunkArray(accountId, byteChunkArray, currentFile, attachmentId, uploadFile);
+                                        } else {
+                                            alert('SORRY!! SYSTEM ERROR!!!!!!');
+                                            return false;
+                                        }
                                     }
-                                }
+                                ); 
                             } else {
-                                $scope.errorMessages = event.message;
+                                // 対象ファイルが存在しない
+                                $scope.errorMessages = 'Could not read file';
                             }
-
-                            // エラー発生時
-                            deferred.reject();
-                            return false;
-                        },
-                        {buffer: true, escape: true, timeout: 120000}
-                    );
-                    
-                    return deferred.promise;
+                        };
+                    } else {
+                        // アップロード処理チェック(次のファイル読み込み)
+                        checkForUploads(accountId, uploadFile);
+                    }
                 }
             }]);
         })();

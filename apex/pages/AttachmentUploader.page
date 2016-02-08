@@ -15,7 +15,8 @@
             <div ng-controller="mainCtrl">
                 <div class="slds">
                     <!-- メッセージ -->
-                    <div class="slds-box slds-theme--info slds-m-bottom--small" ng-show="!!errorMessages.length">
+                    <div class="slds-box slds-theme--info slds-m-bottom--small" ng-show="!!errorMessages.length || !!messages.length">
+                        <p><span ng-bind="messages"></span></p>
                         <p><span ng-bind="errorMessages"></span></p>
                     </div>
                     <div class="slds-m-vertical--small slds-text-heading--label">

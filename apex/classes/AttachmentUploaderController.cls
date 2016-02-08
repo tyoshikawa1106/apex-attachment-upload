@@ -35,16 +35,16 @@ public with sharing class AttachmentUploaderController {
      * 添付ファイルの登録
      */
     @RemoteAction
-    public static AttachmentUploaderRemotingResult doSaveAttachment(String accountId, String attachmentId, String attachmentName, String attachmentBody) {
+    public static AttachmentUploaderRemotingResult doSaveAttachment(String parentId, String attachmentId, String fileName, String contentType, String base64BlobValue) {
         AttachmentUploaderRemotingResult result = new AttachmentUploaderRemotingResult();
 
         try {
             // 添付ファイルIDを条件に添付ファイル情報を取得
             Attachment attachment = dao.getAttachment(attachmentId);
             // 添付ファイルのBody情報を取得
-            attachment.Body = helper.getAttachmentBody(attachment.Body, attachmentBody);
+            attachment.Body = helper.getAttachmentBody(attachment.Body, base64BlobValue);
             // 添付ファイル登録情報をセット(添付ファイルIDが存在しない新規の場合)
-            helper.setAttachmentInfo(attachment, accountId, attachmentId, attachmentName);
+            helper.setAttachmentInfo(attachment, parentId, attachmentId, fileName);
             // 登録処理実行
             upsert attachment;
             // 戻り値IDをセット
