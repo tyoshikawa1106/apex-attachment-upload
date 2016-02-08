@@ -107,66 +107,24 @@
                  */
                 function doFilesRead(accountId, uploadFile) {
                     console.log('-- doFilesRead START --');
-                    console.log('accountId = ' + accountId);
-                    console.log('uploadFile size = ' + uploadFile.files.length);
                     // [Promise]ファイルの読み込み
                     var promiseFileRead = fileRead(accountId, uploadFile);
-                    var promiseFileReadResult = promiseFileRead.then(function(result) {
-                        console.log('-- promiseFileRead --');
-                        return result;
-                    });
-                    var promiseAttachment = promiseFileReadResult.then(function(uploadFile) {
-                        console.log('-- promiseFileReadResult --');
-                        // 添付ファイル件数ループ
-                        for (var i = 0; i < uploadFile.length; i++) {
-                            var fileName = uploadFile[i].name;
-                            var attachment = uploadFile[i].attachment;
-                            // 添付ファイルの登録処理
-                            var promiseUploader = doSaveAttachmentByApex(accountId, null, fileName, attachment, 0);
+                    promiseFileRead.then(function(result) {
+                        // ファイルリードの結果をつかってRemoteActionで登録処理を実行
+                        var subPromises = [];
+                        for (var i = 0; i < result.length; i++) {
+                            var fileName = result[i].name;
+                            var attachment = result[i].attachment;
+                            subPromises.push(doSaveAttachmentByApex(accountId, null, fileName, attachment, 0));
                         }
+                        // PromiseAll処理
+                        var subPromiseAll = $q.all(subPromises);
+                        subPromiseAll.then(function() {
+                            // 検証用メッセージ
+                            console.log('-- Upload!!! --');
+                            $scope.errorMessages = '登録成功！'
+                        });
                     });
-
-                    console.log('-- doFilesRead END --');
-                }
-
-                /**
-                 * 添付ファイルの登録処理(Apex)
-                 * 一度の通信量に上限があるため複数回に分けて実行
-                 */
-                function doSaveAttachmentByApex(accountId, attachmentId, attachmentName, attachment, positionIndex) {
-                    // ファイルのBody情報取得
-                    var doneUploading = false;
-                    var fileSize = attachment.length;
-
-                    var attachmentBody = "";
-                    if(fileSize <= positionIndex + CHUNK_SIZE) {
-                        attachmentBody = attachment.substring(positionIndex);
-                        doneUploading = true;
-                    } else {
-                        attachmentBody = attachment.substring(positionIndex, positionIndex + CHUNK_SIZE);
-                    }
-
-                    // RemoteAction
-                    AttachmentUploaderController.doSaveAttachment(accountId, attachmentId, attachmentName, attachmentBody,
-                        function(result, event){
-                            if(event.status) {
-                                if (result.errorMessages.length > 0) {
-                                    $scope.errorMessages = result.errorMessages;
-                                } else {
-                                    if(doneUploading == true) {
-                                        console.log('Attachment Upload = ' + result.recordId);
-                                    } else {
-                                        // 添付ファイル登録処理の再呼び出し(Bodyの続きをアップロード)
-                                        doSaveAttachmentByApex(accountId, result.recordId, attachmentName, attachment, positionIndex + CHUNK_SIZE);
-                                    }
-                                }
-                            } else {
-                                alert(event.message);
-                            }
-                            return false;
-                        },
-                        {buffer: true, escape: true, timeout: 120000}
-                    );
                 }
 
                 /**
@@ -203,7 +161,57 @@
                     
                     return deferred.promise; 
                 }
-            }]);    
+
+                /**
+                 * 添付ファイルの登録処理(Apex)
+                 * 一度の通信量に上限があるため複数回に分けて実行
+                 */
+                function doSaveAttachmentByApex(accountId, attachmentId, attachmentName, attachment, positionIndex) {
+                    var deferred = $q.defer();
+
+                    // ファイルのBody情報取得
+                    var doneUploading = false;
+                    var fileSize = attachment.length;
+
+                    var attachmentBody = "";
+                    if(fileSize <= positionIndex + CHUNK_SIZE) {
+                        attachmentBody = attachment.substring(positionIndex);
+                        doneUploading = true;
+                    } else {
+                        attachmentBody = attachment.substring(positionIndex, positionIndex + CHUNK_SIZE);
+                    }
+
+                    // RemoteAction
+                    AttachmentUploaderController.doSaveAttachment(accountId, attachmentId, attachmentName, attachmentBody,
+                        function(result, event){
+                            if(event.status) {
+                                if (result.errorMessages.length > 0) {
+                                    $scope.errorMessages = result.errorMessages;
+                                } else {
+                                    if(doneUploading == true) {
+                                        console.log('Attachment Upload = ' + result.recordId);
+                                        deferred.resolve();
+                                        return false;
+                                    } else {
+                                        // 添付ファイル登録処理の再呼び出し(Bodyの続きをアップロード)
+                                        doSaveAttachmentByApex(accountId, result.recordId, attachmentName, attachment, positionIndex + CHUNK_SIZE);
+                                        return false;
+                                    }
+                                }
+                            } else {
+                                $scope.errorMessages = event.message;
+                            }
+
+                            // エラー発生時
+                            deferred.reject();
+                            return false;
+                        },
+                        {buffer: true, escape: true, timeout: 120000}
+                    );
+                    
+                    return deferred.promise;
+                }
+            }]);
         })();
     </script>
 </apex:page>
