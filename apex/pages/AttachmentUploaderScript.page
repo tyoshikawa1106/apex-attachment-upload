@@ -193,7 +193,7 @@
                         var reader = new FileReader();
                         
                         //Read the blobChunk as a binary string, reader.onloadend function below is automatically called after this line
-                        reader.readAsBinaryString(blobChunk);
+                        reader.readAsArrayBuffer(blobChunk);
                         
                         //Create a reader.onload function, this will execute immediately after reader.readAsBinaryString() function above;
                         reader.onloadend = function(evt){ 
